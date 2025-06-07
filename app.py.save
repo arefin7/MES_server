@@ -1,0 +1,75 @@
+from flask import Flask, request, jsonify
+import json
+import os
+import paho.mqtt.client as mqtt
+import paho.mqtt.publish as publish
+from threading import Thread
+
+app = Flask(__name__)
+WORK_ORDER_FILE = "data/work_orders.json"
+MACHINE_STATUS_FILE = "data/machine_status.json"
+MQTT_BROKER = "localhost"  # Or use IP like "192.168.137.14"
+
+# Ensure data folder exists
+os.makedirs("data", exist_ok=True)
+
+# Load existing work orders
+def load_json(path):
+    if os.path.exists(path):
+        with open(path, "r") as f:
+            return json.load(f)
+    return []
+
+def save_json(path, data):
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2)
+
+@app.route('/api/work-orders', methods=['GET'])
+def get_work_orders():
+    return jsonify(load_json(WORK_ORDER_FILE))
+
+@app.route('/api/machine-status', methods=['POST'])
+def post_machine_status():
+    status = request.json
+    statuses = load_json(MACHINE_STATUS_FILE)
+    statuses.append(status)
+    save_json(MACHINE_STATUS_FILE, statuses)
+    return jsonify({"message": "Status received"})
+
+@app.route('/api/work-orders/<order_id>/send', methods=['POST'])
+def send_work_order(order_id):
+    orders = load_json(WORK_ORDER_FILE)
+    for order in orders:
+        if order["order_id"] == order_id:
+            topic = f"work-orders/{order['machine_id']}"
+            payload = json.dumps(order)
+            publish.single(topic, payload, hostname=MQTT_BROKER)
+            return jsonify({"message": f"Order {order_id} sent to {topic}"})
+    return jsonify({"error": "Order not found"}), 404
+
+# Handle incoming ACKs from ESP32
+def on_mqtt_message(client, userdata, msg):
+    try:
+        ack = json.loads(msg.payload.decode())
+        print(f"Received ACK: {ack}")
+        # Update order status in work_orders.json
+        orders = load_json(WORK_ORDER_FILE)
+        for order in orders:
+            if order["order_id"] == ack["order_id"]:
+                order["status"] = ack["status"]
+        save_json(WORK_ORDER_FILE, orders)
+    except Exception as e:
+        print("ACK processing error:", e)
+
+def start_mqtt_listener():
+    client = mqtt.Client()
+    client.on_message = on_mqtt_message
+    client.connect(MQTT_BROKER)
+    client.subscribe("machine/ack/+")
+    client.loop_forever()
+
+# Run MQTT listener in background
+Thread(target=start_mqtt_listener, daemon=True).start()
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
