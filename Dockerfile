@@ -1,18 +1,22 @@
-# Use official lightweight Python image
-FROM python:3.9-slim
+FROM python:3.10-slim
 
-# Set working directory
 WORKDIR /app
 
-# Copy and install requirements
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libpq-dev \
+    gcc \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt .
+
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy all project files
 COPY . .
 
-# Expose port 8080 for Cloud Run
 EXPOSE 8080
 
-# Run gunicorn server for Flask app
-CMD ["gunicorn", "--config", "gunicorn_config.py", "app:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "app:app"]
+
