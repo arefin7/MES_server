@@ -1,5 +1,7 @@
 FROM python:3.10-slim
 
+RUN python --version
+
 WORKDIR /app
 
 # Install system dependencies
