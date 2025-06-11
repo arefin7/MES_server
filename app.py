@@ -99,6 +99,9 @@ def mqtt_thread():
 # --------------------------------------------------------
 # ENTRY POINT
 # --------------------------------------------------------
+@app.route('/')
+def index():
+    return "MES Server is Running. Use /api/* endpoints."
 
 if __name__ == "__main__":
     # Run MQTT listener in the background
